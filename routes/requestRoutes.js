@@ -20,7 +20,7 @@ router.get('/experiments/:experimentId/suggested-chemicals',
 router.post('/', 
   authenticate, 
   authorizeRole(['faculty']), 
-  validateChemicalRequest, 
+  require('../middleware/validators').validateUnifiedRequest, 
   requestController.createRequest
 );
 

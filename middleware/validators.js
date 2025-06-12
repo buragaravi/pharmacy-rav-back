@@ -24,6 +24,31 @@ const validateChemicalRequest = [
   validate
 ];
 
+// Unified request validation (chemicals, equipment, glassware)
+const validateUnifiedRequest = [
+  body('labId').isString().notEmpty(),
+  body('experiments').isArray().notEmpty(),
+  body('experiments.*.experimentName').isString().notEmpty(),
+  body('experiments.*.date').isISO8601(),
+  body('experiments.*.session').isString().notEmpty(),
+  // Chemicals
+  body('experiments.*.chemicals').optional().isArray(),
+  body('experiments.*.chemicals.*.chemicalName').optional().isString().notEmpty(),
+  body('experiments.*.chemicals.*.quantity').optional().isFloat({ min: 0 }),
+  body('experiments.*.chemicals.*.unit').optional().isString().notEmpty(),
+  // Equipment
+  body('experiments.*.equipment').optional().isArray(),
+  body('experiments.*.equipment.*.itemId').optional().isString().notEmpty(),
+  body('experiments.*.equipment.*.productId').optional().isString().notEmpty(),
+  body('experiments.*.equipment.*.name').optional().isString().notEmpty(),
+  // Glassware
+  body('experiments.*.glassware').optional().isArray(),
+  body('experiments.*.glassware.*.glasswareId').optional().isString().notEmpty(),
+  body('experiments.*.glassware.*.name').optional().isString().notEmpty(),
+  body('experiments.*.glassware.*.quantity').optional().isFloat({ min: 0 }),
+  validate
+];
+
 // Chemical allocation validation
 const validateChemicalAllocation = [
   body('labId').isString().notEmpty(),
@@ -89,10 +114,11 @@ const validatePasswordReset = [
 
 module.exports = {
   validateChemicalRequest,
+  validateUnifiedRequest,
   validateChemicalAllocation,
   validateQuotation,
   validateId,
   validateQueryParams,
   validateUserUpdate,
   validatePasswordReset
-}; 
+};

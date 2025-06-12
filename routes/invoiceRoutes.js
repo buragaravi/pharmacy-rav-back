@@ -15,7 +15,7 @@ router.get('/',  getInvoices);
 router.post('/glassware', createGlasswareInvoice);
 
 // Others invoice
-router.post('/others', createOthersInvoice);
+router.post('/others', createOthersInvoice); 
 
 // Equipment invoice
 router.post('/equipment', createEquipmentInvoice);

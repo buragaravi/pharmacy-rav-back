@@ -70,6 +70,41 @@ const requestSchema = new mongoose.Schema(
             ]
           },
         ],
+        equipment: [
+          {
+            itemId: { type: String, required: true }, // Unique equipment item
+            productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+            name: { type: String, required: true },
+            variant: { type: String },
+            unit: { type: String },
+            status: { type: String }, // e.g., 'Available', 'Issued', etc.
+            isAllocated: { type: Boolean, default: false },
+            allocationHistory: [
+              {
+                date: Date,
+                allocatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+              }
+            ]
+          }
+        ],
+        glassware: [
+          {
+            glasswareId: { type: mongoose.Schema.Types.ObjectId, ref: 'GlasswareLive', required: true },
+            productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+            name: { type: String, required: true },
+            variant: { type: String },
+            quantity: { type: Number, required: true, min: 0 },
+            unit: { type: String },
+            isAllocated: { type: Boolean, default: false },
+            allocationHistory: [
+              {
+                date: Date,
+                quantity: Number,
+                allocatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+              }
+            ]
+          }
+        ]
       },
     ],
     status: {

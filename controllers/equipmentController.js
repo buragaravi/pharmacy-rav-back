@@ -576,7 +576,7 @@ const getLiveEquipmentByLab = asyncHandler(async (req, res) => {
   try {
     const { labId } = req.query;
     let filter = {};
-    if (labId && labId.toLowerCase() !== 'central') {
+    if (labId && labId.toLowerCase() !== 'central-lab') {
       filter.location = labId;
     }
     const equipment = await EquipmentLive.find(filter);
@@ -600,6 +600,47 @@ const getCurrentMonthStockCheckReports = asyncHandler(async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+// Internal function for allocating equipment to faculty (for unified request fulfillment)
+exports.allocateEquipmentToFacultyInternal = async function({ allocations, fromLabId, adminId }) {
+  // allocations: [{ itemId }]
+  try {
+    for (const alloc of allocations) {
+      const { itemId } = alloc;
+      const item = await EquipmentLive.findOne({ itemId, labId: fromLabId, status: 'Available' });
+      if (!item) {
+        return { success: false, message: `Equipment item ${itemId} not available in lab` };
+      }
+      item.status = 'Issued';
+      item.labId = 'faculty';
+      item.location = 'faculty';
+      item.assignedTo = 'faculty';
+      await item.save();
+      await EquipmentTransaction.create({
+        itemId,
+        action: 'issue',
+        performedBy: adminId,
+        performedByRole: 'lab_assistant',
+        fromLocation: fromLabId,
+        toLocation: 'faculty',
+        assignedTo: 'faculty',
+        remarks: 'Allocated to faculty',
+        interface: 'web',
+      });
+      await EquipmentAuditLog.create({
+        itemId,
+        action: 'issue',
+        performedBy: adminId,
+        performedByRole: 'lab_assistant',
+        remarks: 'Allocated to faculty',
+        interface: 'web',
+      });
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+};
 
 module.exports = {
   addEquipmentToCentral,

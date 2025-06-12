@@ -332,6 +332,36 @@ const allocateGlasswareToFaculty = asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'Glassware allocated to faculty' });
 });
 
+// Internal function for allocating glassware to faculty (for unified request fulfillment)
+exports.allocateGlasswareToFacultyInternal = async function({ allocations, fromLabId, adminId }) {
+  // allocations: [{ glasswareId, quantity }]
+  try {
+    for (const alloc of allocations) {
+      const { glasswareId, quantity } = alloc;
+      const labStock = await GlasswareLive.findOne({ _id: glasswareId, labId: fromLabId });
+      if (!labStock || labStock.quantity < quantity) {
+        return { success: false, message: `Insufficient stock for glassware ${glasswareId}` };
+      }
+      labStock.quantity -= quantity;
+      await labStock.save();
+      await Transaction.create({
+        transactionType: 'transfer',
+        chemicalName: labStock.name,
+        fromLabId,
+        toLabId: 'faculty',
+        chemicalLiveId: labStock._id,
+        quantity,
+        unit: labStock.unit,
+        createdBy: adminId,
+        timestamp: new Date(),
+      });
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+};
+
 // Get central/lab stock
 const getGlasswareStock = asyncHandler(async (req, res) => {
   const { labId } = req.query;
@@ -420,5 +450,6 @@ module.exports = {
   allocateGlasswareToFaculty,
   getGlasswareStock,
   getCentralAvailableGlassware,
-  scanGlasswareQRCode // <-- export new endpoint
+  scanGlasswareQRCode, // <-- export new endpoint
+  allocateGlasswareToFacultyInternal: exports.allocateGlasswareToFacultyInternal // <-- export internal function
 };

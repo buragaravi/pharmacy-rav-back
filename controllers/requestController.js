@@ -151,7 +151,7 @@ exports.approveRequest = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Fulfill remaining chemicals in a partially fulfilled request
+// @desc    Fulfill remaining chemicals, then allocate glassware and equipment
 // @route   POST /api/requests/fulfill-remaining
 // @access  Private (Admin/Lab Assistant)
 exports.fulfillRemaining = asyncHandler(async (req, res) => {
@@ -202,14 +202,16 @@ exports.fulfillRemaining = asyncHandler(async (req, res) => {
     }
   }
 
-  // Process available chemicals
+  // Allocate available chemicals
   for (const chem of fulfilledChemicals) {
     const { chemicalName, quantity, unit, experimentId, chemicalMasterId } = chem;
     const labStock = await ChemicalLive.findOne({ chemicalName, labId });
 
+    // Update chemical stock
     labStock.quantity -= quantity;
     await labStock.save();
 
+    // Record transaction
     await Transaction.create({
       transactionType: 'transfer',
       chemicalName,
@@ -238,23 +240,100 @@ exports.fulfillRemaining = asyncHandler(async (req, res) => {
     });
   }
 
+  // --- NEW: Allocate glassware ---
+  const glasswareAllocations = [];
+  for (const experiment of request.experiments) {
+    for (const glass of (experiment.glassware || [])) {
+      if (glass.isAllocated) continue;
+      glasswareAllocations.push({
+        glasswareId: glass.glasswareId,
+        quantity: glass.quantity
+      });
+    }
+  }
+  let glasswareResult = null;
+  if (glasswareAllocations.length > 0) {
+    // Call glassware allocation controller (simulate internal API call)
+    const glasswareController = require('./glasswareController');
+    glasswareResult = await glasswareController.allocateGlasswareToFacultyInternal({
+      allocations: glasswareAllocations,
+      fromLabId: labId,
+      adminId
+    });
+    // Mark glassware as allocated if successful
+    if (glasswareResult.success) {
+      for (const experiment of request.experiments) {
+        for (const glass of (experiment.glassware || [])) {
+          if (!glass.isAllocated && glasswareAllocations.find(g => g.glasswareId.toString() === glass.glasswareId.toString())) {
+            glass.isAllocated = true;
+            glass.allocationHistory = glass.allocationHistory || [];
+            glass.allocationHistory.push({
+              date: new Date(),
+              quantity: glass.quantity,
+              allocatedBy: adminId
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // --- NEW: Allocate equipment ---
+  const equipmentAllocations = [];
+  for (const experiment of request.experiments) {
+    for (const equip of (experiment.equipment || [])) {
+      if (equip.isAllocated) continue;
+      equipmentAllocations.push({
+        itemId: equip.itemId
+      });
+    }
+  }
+  let equipmentResult = null;
+  if (equipmentAllocations.length > 0) {
+    // Call equipment allocation controller (simulate internal API call)
+    const equipmentController = require('./equipmentController');
+    equipmentResult = await equipmentController.allocateEquipmentToFacultyInternal({
+      allocations: equipmentAllocations,
+      fromLabId: labId,
+      adminId
+    });
+    // Mark equipment as allocated if successful
+    if (equipmentResult.success) {
+      for (const experiment of request.experiments) {
+        for (const equip of (experiment.equipment || [])) {
+          if (!equip.isAllocated && equipmentAllocations.find(e => e.itemId === equip.itemId)) {
+            equip.isAllocated = true;
+            equip.allocationHistory = equip.allocationHistory || [];
+            equip.allocationHistory.push({
+              date: new Date(),
+              allocatedBy: adminId
+            });
+          }
+        }
+      }
+    }
+  }
+
   // Update request status
-  const allChemicalsAllocated = request.experiments.every(exp => 
-    exp.chemicals.every(chem => chem.isAllocated)
+  const allAllocated = request.experiments.every(exp => 
+    exp.chemicals.every(chem => chem.isAllocated) &&
+    (exp.glassware ? exp.glassware.every(g => g.isAllocated) : true) &&
+    (exp.equipment ? exp.equipment.every(e => e.isAllocated) : true)
   );
-  request.status = allChemicalsAllocated ? 'fulfilled' : 'partially_fulfilled';
+  request.status = allAllocated ? 'fulfilled' : 'partially_fulfilled';
   request.updatedBy = adminId;
-  
   await request.save();
 
   res.status(200).json({
-    msg: `Successfully fulfilled ${fulfilledChemicals.length} remaining chemicals.`,
+    msg: `Successfully fulfilled chemicals, glassware, and equipment.`,
     unfulfilled: unfulfilledChemicals,
+    glasswareResult,
+    equipmentResult,
     request
   });
 });
 
-// @desc    Create a new chemical request
+// @desc    Create a new unified request (chemicals, equipment, glassware)
 // @route   POST /api/requests
 // @access  Private (Faculty)
 exports.createRequest = asyncHandler(async (req, res) => {
@@ -267,35 +346,28 @@ exports.createRequest = asyncHandler(async (req, res) => {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  // Process experiments and get suggested chemicals
+  // Process experiments and suggested chemicals
   const processedExperiments = await Promise.all(experiments.map(async exp => {
     const experiment = await Experiment.findById(exp.experimentId);
     if (!experiment) {
       throw new Error(`Experiment not found: ${exp.experimentId}`);
     }
 
-    // Get suggested chemicals for this experiment
-    const suggestedChemicals = experiment.defaultChemicals.map(defaultChem => {
-      const averageUsage = experiment.averageUsage.find(
-        avg => avg.chemicalName === defaultChem.chemicalName
-      );
-
-      return {
-        chemicalName: defaultChem.chemicalName,
-        quantity: averageUsage ? averageUsage.averageQuantity : defaultChem.quantity,
-        unit: defaultChem.unit,
-        allocatedQuantity: 0,
-        isAllocated: false,
-        allocationHistory: []
-      };
-    });
+    // Chemicals (existing logic)
+    const chemicals = exp.chemicals || [];
+    // Equipment (new unified logic)
+    const equipment = exp.equipment || [];
+    // Glassware (new unified logic)
+    const glassware = exp.glassware || [];
 
     return {
       experimentId: experiment._id,
       experimentName: experiment.name,
       date: exp.date,
       session: exp.session,
-      chemicals: exp.chemicals || suggestedChemicals // Use provided chemicals or suggested ones
+      chemicals,
+      equipment,
+      glassware
     };
   }));
 

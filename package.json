@@ -27,6 +27,8 @@
     "mongoose": "^7.0.3",
     "node-cron": "^4.0.5",
     "qrcode": "^1.5.4",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "uui": "^1.0.7",
     "uuid": "^11.1.0",
     "winston": "^3.8.2"
